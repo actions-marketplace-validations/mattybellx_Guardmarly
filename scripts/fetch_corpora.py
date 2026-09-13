@@ -48,7 +48,7 @@ CORPORA: list[Corpus] = [
         slug="owasp-benchmark-java",
         name="OWASP Benchmark (Java)",
         url="https://github.com/OWASP-Benchmark/BenchmarkJava.git",
-        commit="v1.2",  # tag
+        commit="20cbf3d11123347e47ed89541e6942836def53f7",  # HEAD 2026-09-11; tag "v1.2" does not exist upstream
         category="benchmark",
         languages=["java"],
         description="OWASP Benchmark v1.2 — 2,740 Java test cases across 11 CWE categories",
@@ -405,7 +405,7 @@ def fetch_corpus(corpus: Corpus, shallow: bool = True, dry_run: bool = False) ->
         print(f"  [{corpus.slug}] At commit {actual}")
         return True
 
-    print(f"  [{corpus.slug}] Cloning {corpus.url} → {dest}")
+    print(f"  [{corpus.slug}] Cloning {corpus.url} -> {dest}")
     if dry_run:
         print(f"  [DRY RUN] Would clone to {dest}")
         return True
@@ -420,11 +420,23 @@ def fetch_corpus(corpus: Corpus, shallow: bool = True, dry_run: bool = False) ->
     if not run(clone_cmd, CORPORA_DIR, dry_run):
         return False
 
-    # Checkout the pinned commit
+    # Checkout the pinned commit. A failed pin is a hard error, never a warning:
+    # a corpus that silently stayed at HEAD produces unattributable results, and
+    # silent drift is exactly what pinning exists to prevent. This was observed
+    # in practice -- `owasp-benchmark-java` pins the tag `v1.2`, which does not
+    # exist in that repository, so the clone fell back to HEAD while the run
+    # still reported success.
     checkout_cmd = ["git", "checkout", corpus.commit]
     if not run(checkout_cmd, dest, dry_run):
-        print(f"  [{corpus.slug}] WARNING: Checkout of {corpus.commit} failed, staying at HEAD",
-              file=sys.stderr)
+        print(
+            f"  [{corpus.slug}] ERROR: cannot check out pinned revision "
+            f"{corpus.commit!r}. Refusing to leave the corpus at HEAD because "
+            f"any measurement taken from it would be unattributable. Update the "
+            f"`commit` field for this corpus in CORPORA to a revision that "
+            f"exists (tag or sha).",
+            file=sys.stderr,
+        )
+        return False
 
     print(f"  [{corpus.slug}] Done.")
     return True
